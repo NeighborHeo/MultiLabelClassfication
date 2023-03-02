@@ -11,6 +11,7 @@ import torchvision.transforms as transforms
 import os
 import argparse
 
+import timm
 from models import *
 from utils import progress_bar
 
@@ -34,12 +35,13 @@ parser.add_argument('--resume', '-r', action='store_true',
                     help='resume from checkpoint')
 parser.add_argument('--model_name', default='', type=str, help='model name')
 parser.add_argument('--model_index', default=0, type=int, help='model index')
-model_name_list = ['VGG19', 'ResNet18', 'PreActResNet18', 'GoogLeNet', 'DenseNet121', 'ResNeXt29_2x64d', 'MobileNet', 'MobileNetV2', 'DPN92', 'ShuffleNetG2', 'SENet18', 'ShuffleNetV2_1', 'EfficientNetB0', 'RegNetX_200MF', 'SimpleDLA']
+model_name_list = ['VGG19', 'ResNet18', 'PreActResNet18', 'GoogLeNet', 'DenseNet121', 'ResNeXt29_2x64d', 'MobileNet', 'MobileNetV2', 'DPN92', 'ShuffleNetG2', 'SENet18', 'ShuffleNetV2_1', 'EfficientNetB0', 'RegNetX_200MF', 'SimpleDLA', 'vit_tiny_patch16_224', 'vit_small_patch16_224', 'vit_base_patch16_224']
 args = parser.parse_args()
 if args.model_name == '':
     print('model name is None')
     args.model_name = model_name_list[args.model_index]
-    print('model name is set to {}'.format(args.model_name))
+    
+print('model name is {}'.format(args.model_name))
 checkpoint_path = './checkpoint/{}/'.format(args.model_name)
 if not os.path.exists(checkpoint_path):
     os.makedirs(checkpoint_path)
@@ -48,16 +50,22 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 best_acc = 0  # best test accuracy
 start_epoch = 0  # start from epoch 0 or last checkpoint epoch
 
+img_size = 32
+if args.model_name == 'vit_tiny_patch16_224' or args.model_name == 'vit_small_patch16_224' or args.model_name == 'vit_base_patch16_224':
+    img_size = 224
+
 # Data
 print('==> Preparing data..')
 transform_train = transforms.Compose([
     transforms.RandomCrop(32, padding=4),
+    transforms.Resize(img_size),
     transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 ])
 
 transform_test = transforms.Compose([
+    transforms.Resize(img_size),
     transforms.ToTensor(),
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 ])
@@ -108,6 +116,15 @@ elif args.model_name == 'RegNetX_200MF':
     net = RegNetX_200MF()
 elif args.model_name == 'SimpleDLA':
     net = SimpleDLA()
+elif args.model_name == 'vit_tiny_patch16_224':
+    net = timm.create_model('vit_tiny_patch16_224', pretrained=False)
+    net.head = nn.Linear(net.head.in_features, 10)
+elif args.model_name == 'vit_small_patch16_224':
+    net = timm.create_model('vit_small_patch16_224', pretrained=False)
+    net.head = nn.Linear(net.head.in_features, 10)
+elif args.model_name == 'vit_base_patch16_224':
+    net = timm.create_model('vit_base_patch16_224', pretrained=False)
+    net.head = nn.Linear(net.head.in_features, 10)
 else:
     raise ValueError('No such model')
 
