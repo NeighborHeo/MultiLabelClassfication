@@ -180,9 +180,8 @@ def train(epoch):
 
         progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                      % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
-        
-    experiment.log_parameter("train_loss", train_loss/(batch_idx+1))
-    experiment.log_parameter("train_acc", 100.*correct/total)
+    metrics = { "train_loss": train_loss/(batch_idx+1), "train_acc": 100.*correct/total }
+    experiment.log_metrics(metrics, step=epoch)
 
 
 def test(epoch):
@@ -205,9 +204,9 @@ def test(epoch):
             progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                          % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
             
-    experiment.log_parameter("test_loss", test_loss/(batch_idx+1))
-    experiment.log_parameter("test_acc", 100.*correct/total)
-
+    metrics = { "test_loss": test_loss/(batch_idx+1), "test_acc": 100.*correct/total }
+    experiment.log_metrics(metrics, step=epoch)
+    
     # Save checkpoint.
     acc = 100.*correct/total
     if acc > best_acc:
