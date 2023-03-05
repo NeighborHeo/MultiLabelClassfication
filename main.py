@@ -27,14 +27,13 @@ np.random.seed(0)
 # set detect anomaly 
 torch.autograd.set_detect_anomaly(True)
 
-import wandb 
-
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
 parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true',
                     help='resume from checkpoint')
 parser.add_argument('--model_name', default='', type=str, help='model name')
 parser.add_argument('--model_index', default=0, type=int, help='model index')
+parser.add_argument('--pretrained', action='store_true', help='use pretrained model')
 model_name_list = ['VGG19', 'ResNet18', 'PreActResNet18', 'GoogLeNet', 'DenseNet121', 'ResNeXt29_2x64d', 'MobileNet', 'MobileNetV2', 'DPN92', 'ShuffleNetG2', 'SENet18', 'ShuffleNetV2_1', 'EfficientNetB0', 'RegNetX_200MF', 'SimpleDLA', 'vit_tiny_patch16_224', 'vit_small_patch16_224', 'vit_base_patch16_224']
 args = parser.parse_args()
 if args.model_name == '':
@@ -71,12 +70,12 @@ transform_test = transforms.Compose([
 ])
 
 trainset = torchvision.datasets.CIFAR10(
-    root='./data', train=True, download=True, transform=transform_train)
+    root='~/.data', train=True, download=True, transform=transform_train)
 trainloader = torch.utils.data.DataLoader(
     trainset, batch_size=128, shuffle=True, num_workers=2)
 
 testset = torchvision.datasets.CIFAR10(
-    root='./data', train=False, download=True, transform=transform_test)
+    root='~/.data', train=False, download=True, transform=transform_test)
 testloader = torch.utils.data.DataLoader(
     testset, batch_size=100, shuffle=False, num_workers=2)
 
@@ -117,13 +116,13 @@ elif args.model_name == 'RegNetX_200MF':
 elif args.model_name == 'SimpleDLA':
     net = SimpleDLA()
 elif args.model_name == 'vit_tiny_patch16_224':
-    net = timm.create_model('vit_tiny_patch16_224', pretrained=False)
+    net = timm.create_model('vit_tiny_patch16_224', pretrained=args.pretrained)
     net.head = nn.Linear(net.head.in_features, 10)
 elif args.model_name == 'vit_small_patch16_224':
-    net = timm.create_model('vit_small_patch16_224', pretrained=False)
+    net = timm.create_model('vit_small_patch16_224', pretrained=args.pretrained)
     net.head = nn.Linear(net.head.in_features, 10)
 elif args.model_name == 'vit_base_patch16_224':
-    net = timm.create_model('vit_base_patch16_224', pretrained=False)
+    net = timm.create_model('vit_base_patch16_224', pretrained=args.pretrained)
     net.head = nn.Linear(net.head.in_features, 10)
 else:
     raise ValueError('No such model')
@@ -141,14 +140,17 @@ if args.resume:
     net.load_state_dict(checkpoint['net'])
     best_acc = checkpoint['acc']
     start_epoch = checkpoint['epoch']
+    
+from comet_ml import Experiment
 
-
-wandb.init(
-    # set the wandb project where this run will be logged
-    project="pytorch_models",
-    # track hyperparameters and run metadata
-    config=args,
+# Create an experiment with your api key
+experiment = Experiment(
+    api_key="3JenmgUXXmWcKcoRk8Yra0XcD",
+    project_name="pytorch-model",
+    workspace="neighborheo",
 )
+
+experiment.log_parameters(args)
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(net.parameters(), lr=args.lr,
@@ -179,7 +181,8 @@ def train(epoch):
         progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                      % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
         
-    wandb.log({"train_loss": train_loss/(batch_idx+1), "train_acc": 100.*correct/total})
+    experiment.log_parameter("train_loss", train_loss/(batch_idx+1))
+    experiment.log_parameter("train_acc", 100.*correct/total)
 
 
 def test(epoch):
@@ -202,7 +205,8 @@ def test(epoch):
             progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                          % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
             
-    wandb.log({"test_loss": test_loss/(batch_idx+1), "test_acc": 100.*correct/total})
+    experiment.log_parameter("test_loss", test_loss/(batch_idx+1))
+    experiment.log_parameter("test_acc", 100.*correct/total)
 
     # Save checkpoint.
     acc = 100.*correct/total
