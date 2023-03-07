@@ -1,0 +1,24 @@
+---
+model_name: vit_base_patch16_224
+model_index: 0
+pretrained: True
+resume: False
+batch_size: 128
+lr: 0.1
+epochs: 200
+weight_decay: 5e-4
+momentum: 0.9
+print_freq: 10
+save_freq: 10
+save_path: checkpoint
+data_path: ~/.data
+dataset: cifar10
+num_classes: 10
+num_workers: 2
+seed: 1
+device: cuda
+gpu_id: 0
+log_path: log.txt
+log_freq: 10
+log_to_file: True
+log_to_comet: True
