@@ -46,7 +46,7 @@ if args.model_name == '':
     args.model_name = model_name_list[args.model_index]
     
 print('model name is {}'.format(args.model_name))
-checkpoint_path = './checkpoint/{}_{}_{}_{}/'.format(args.dataset, args.model_name, args.lr, args.nindex)
+checkpoint_path = './checkpoint/{}_{}_{}_{}_{}/'.format(args.dataset, args.model_name, args.lr, args.nindex, args.task)
 if not os.path.exists(checkpoint_path):
     os.makedirs(checkpoint_path)
 
@@ -240,7 +240,7 @@ from comet_ml import Experiment
 # Create an experiment with your api key
 experiment = Experiment(
     api_key="3JenmgUXXmWcKcoRk8Yra0XcD",
-    project_name="pytorch-model-multiclass",
+    project_name="voc-vit-compare",
     workspace="neighborheo",
 )
 
@@ -249,7 +249,7 @@ experiment.log_parameters(args)
 if args.task == 'multilabel':
     criterion = nn.MultiLabelSoftMarginLoss()    # multi-label classification loss : sigmoid + bce
 else:
-    criterion = nn.BCEWithLogitsLoss()           # binary classification loss : sigmoid + bce
+    criterion = nn.CrossEntropyLoss()   # single-label classification loss : softmax + nll
 
 net = torch.nn.DataParallel(net)
 last_layer_name = list(net.module.named_children())[-1][0]
@@ -277,7 +277,10 @@ def train(epoch):
         optimizer.zero_grad()
         outputs = net(inputs)
         # print(outputs.dtype, targets.dtype)
-        loss = criterion(outputs, targets.float())
+        if args.task == 'singlelabel':
+            loss = criterion(outputs, targets)
+        else:
+            loss = criterion(outputs, targets.float())
         loss.backward()
         optimizer.step()
         
@@ -310,7 +313,10 @@ def test(epoch):
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = net(inputs)
             # print(outputs.dtype, targets.dtype)
-            loss = criterion(outputs, targets.float())
+            if args.task == 'singlelabel':
+                loss = criterion(outputs, targets.long())
+            else:
+                loss = criterion(outputs, targets.float())
             test_loss += loss.item()
             if args.task == 'singlelabel':
                 _, predicted = outputs.max(1)
