@@ -38,6 +38,7 @@ parser.add_argument('--pretrained', action='store_true', help='use pretrained mo
 parser.add_argument('--dataset', default='cifar10', type=str, help='dataset name')
 parser.add_argument('--earlystop', action='store_true', help='use early stop')
 parser.add_argument('--nindex', default=-1, type=int, help='index of client')
+parser.add_argument('--task', default='singlelabel', type=str, help='task type')
 model_name_list = ['VGG19', 'ResNet18', 'PreActResNet18', 'GoogLeNet', 'DenseNet121', 'ResNeXt29_2x64d', 'MobileNet', 'MobileNetV2', 'DPN92', 'ShuffleNetG2', 'SENet18', 'ShuffleNetV2_1', 'EfficientNetB0', 'RegNetX_200MF', 'SimpleDLA', 'vit_tiny_patch16_224', 'vit_small_patch16_224', 'vit_base_patch16_224', 'head1', 'head2', 'head3']
 args = parser.parse_args()
 if args.model_name == '':
@@ -125,10 +126,11 @@ elif args.dataset == 'pascal_voc':
     test_imgs = test_imgs.transpose(0, 2, 3, 1)*255
     test_imgs = test_imgs.astype(np.uint8)
     test_labels = np.load(path.joinpath('PASCAL_VOC_val_224_Label.npy'))
-    sum_labels = np.sum(test_labels, axis=1)
-    index = np.where(sum_labels == 1)
-    test_labels = test_labels[index]
-    test_imgs = test_imgs[index]
+    if args.task == 'singlelabel':
+        sum_labels = np.sum(test_labels, axis=1)
+        index = np.where(sum_labels == 1)
+        test_labels = test_labels[index]
+        test_imgs = test_imgs[index]
     print("size of test dataset: ", test_imgs.shape, "images")
 
     if args.nindex == -1:
@@ -145,16 +147,19 @@ elif args.dataset == 'pascal_voc':
         train_imgs = train_imgs.astype(np.uint8)
         train_labels = np.load(flpath.joinpath(f'Party_{nth}_y_data.npy'))
         print("size of train dataset: ", train_imgs.shape, "images")
+        
+    if args.task == 'singlelabel':
+        sum_labels = np.sum(train_labels, axis=1)
+        index = np.where(sum_labels == 1)
+        train_labels = train_labels[index]
+        train_imgs = train_imgs[index]
+    
+    bsinglelabel = args.task == 'singlelabel'
 
-    sum_labels = np.sum(train_labels, axis=1)
-    index = np.where(sum_labels == 1)
-    train_labels = train_labels[index]
-    train_imgs = train_imgs[index]
-
-    train_dataset = myCustomDataset(train_imgs, train_labels, train=True, singlelabel=True, transform=transform_train, target_transform=None)
+    train_dataset = myCustomDataset(train_imgs, train_labels, train=True, singlelabel=bsinglelabel, transform=transform_train, target_transform=None)
     trainloader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=2)
 
-    test_dataset = myCustomDataset(test_imgs, test_labels, train=False, singlelabel=True, transform=transform_test, target_transform=None)
+    test_dataset = myCustomDataset(test_imgs, test_labels, train=False, singlelabel=bsinglelabel, transform=transform_test, target_transform=None)
     testloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=2)
 
     classes = ('aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor')
@@ -197,14 +202,13 @@ elif args.model_name == 'RegNetX_200MF':
 elif args.model_name == 'SimpleDLA':
     net = SimpleDLA()
 elif args.model_name == 'vit_tiny_patch16_224':
-    net = timm.create_model('vit_tiny_patch16_224', pretrained=args.pretrained)
-    net.head = nn.Linear(net.head.in_features, num_classes)
+    net = timm.create_model('vit_tiny_patch16_224', pretrained=args.pretrained, num_classes=num_classes)
 elif args.model_name == 'vit_small_patch16_224':
-    net = timm.create_model('vit_small_patch16_224', pretrained=args.pretrained)
-    net.head = nn.Linear(net.head.in_features, num_classes)
+    net = timm.create_model('vit_small_patch16_224', pretrained=args.pretrained, num_classes=num_classes)
 elif args.model_name == 'vit_base_patch16_224':
-    net = timm.create_model('vit_base_patch16_224', pretrained=args.pretrained)
-    net.head = nn.Linear(net.head.in_features, num_classes)
+    net = timm.create_model('vit_base_patch16_224', pretrained=args.pretrained, num_classes=num_classes)
+elif args.model_name == 'resnet50':
+    net = timm.create_model('resnet50', pretrained=True, num_classes=num_classes)
 elif args.model_name == 'head1':
     net = vit_models.VisionTransformer(
         img_size=224, patch_size=16, num_classes=num_classes, num_heads=1, embed_dim=192, depth=6, mlp_ratio=4, qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6))
@@ -236,15 +240,24 @@ from comet_ml import Experiment
 # Create an experiment with your api key
 experiment = Experiment(
     api_key="3JenmgUXXmWcKcoRk8Yra0XcD",
-    project_name="pytorch-model",
+    project_name="pytorch-model-multiclass",
     workspace="neighborheo",
 )
 
 experiment.log_parameters(args)
 
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(net.parameters(), lr=args.lr,
-                      momentum=0.9, weight_decay=5e-4)
+if args.task == 'multilabel':
+    criterion = nn.MultiLabelSoftMarginLoss()    # multi-label classification loss : sigmoid + bce
+else:
+    criterion = nn.BCEWithLogitsLoss()           # binary classification loss : sigmoid + bce
+
+net = torch.nn.DataParallel(net)
+last_layer_name = list(net.module.named_children())[-1][0]
+parameters = [
+    {'params': [p for n, p in net.module.named_parameters() if last_layer_name not in n], 'lr': 1e-4},
+    {'params': [p for n, p in net.module.named_parameters() if last_layer_name in n], 'lr': 1e-3},
+]
+optimizer = optim.SGD(params=parameters, lr=args.lr, momentum=0.9, weight_decay=5e-4)
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
 
 if args.earlystop:
@@ -263,15 +276,24 @@ def train(epoch):
         inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
         outputs = net(inputs)
-        loss = criterion(outputs, targets)
+        # print(outputs.dtype, targets.dtype)
+        loss = criterion(outputs, targets.float())
         loss.backward()
         optimizer.step()
-
+        
         train_loss += loss.item()
-        _, predicted = outputs.max(1)
-        total += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
-
+        if args.task == 'singlelabel':
+            _, predicted = outputs.max(1)
+            total += targets.size(0)
+            correct += predicted.eq(targets).sum().item()
+        else:
+            predicted = torch.sigmoid(outputs).ge(0.5).float()
+            print(predicted)
+            total += targets.size(0)
+            # correct += (predicted == targets).all(axis=1).sum().item()
+            correct += predicted.eq(targets).all(axis=1).sum().item()
+            # print(outputs.shape, targets.shape, predicted.shape)
+            
         progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                      % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
     metrics = { "train_loss": train_loss/(batch_idx+1), "train_acc": 100.*correct/total }
@@ -287,12 +309,19 @@ def test(epoch):
         for batch_idx, (inputs, targets) in enumerate(testloader):
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = net(inputs)
-            loss = criterion(outputs, targets)
-
+            # print(outputs.dtype, targets.dtype)
+            loss = criterion(outputs, targets.float())
             test_loss += loss.item()
-            _, predicted = outputs.max(1)
-            total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
+            if args.task == 'singlelabel':
+                _, predicted = outputs.max(1)
+                total += targets.size(0)
+                correct += predicted.eq(targets).sum().item()
+            else:
+                # predicted = torch.round(torch.sigmoid(outputs))
+                predicted = torch.sigmoid(outputs).ge(0.5).float()
+                total += targets.size(0)
+                correct += (predicted == targets).all(axis=1).sum().item()
+                # print(outputs, predicted)
 
             progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                          % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))

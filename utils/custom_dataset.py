@@ -11,7 +11,7 @@ class myCustomDataset(torch.utils.data.Dataset):
         self.train = train
         if singlelabel:
             self.imgs, self.targets = self.erase_multi_labels(self.imgs, self.targets)
-        self.targets = np.argmax(self.targets, axis=1)
+            self.targets = np.argmax(self.targets, axis=1)
             
     def erase_multi_labels(self, imgs, targets):
         sum_labels = np.sum(targets, axis=1)
